@@ -1,0 +1,74 @@
+---
+- name: Install Docker dependencies
+  ansible.builtin.dnf:
+    name:
+      - dnf-plugins-core
+    state: present
+
+- name: Add Docker repository
+  ansible.builtin.command:
+    cmd: dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    creates: /etc/yum.repos.d/docker-ce.repo
+
+- name: Install Docker
+  ansible.builtin.dnf:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    state: present
+
+- name: Start and enable Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Create build directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy application files for Docker build
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ app_dir }}/"
+    mode: "0644"
+  loop:
+    - "{{ microservice_src }}/Dockerfile"
+    - "{{ microservice_src }}/app.py"
+    - "{{ microservice_src }}/requirements.txt"
+
+- name: Build Docker image
+  community.docker.docker_image:
+    name: metrics-service
+    tag: latest
+    source: build
+    build:
+      path: "{{ app_dir }}"
+    force_source: true
+
+- name: Run metrics-service container
+  community.docker.docker_container:
+    name: metrics-service
+    image: metrics-service:latest
+    ports:
+      - "{{ service_port }}:8080"
+    restart_policy: always
+    state: started
+    recreate: true
+
+- name: Check if firewalld is running
+  ansible.builtin.command: systemctl is-active firewalld
+  register: firewalld_status
+  ignore_errors: true
+  changed_when: false
+
+- name: Open port in firewalld
+  ansible.posix.firewalld:
+    port: "{{ service_port }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  when: firewalld_status.rc == 0

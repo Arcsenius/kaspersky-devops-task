@@ -1,0 +1,8 @@
+---
+- name: Deploy in bare mode
+  ansible.builtin.include_tasks: bare.yml
+  when: deploy_mode == "bare"
+
+- name: Deploy in container mode
+  ansible.builtin.include_tasks: container.yml
+  when: deploy_mode == "container"

@@ -1,0 +1,10 @@
+---
+- name: Deploy metrics microservice
+  hosts: metrics_servers
+  become: true
+
+  vars:
+    microservice_src: "{{ playbook_dir }}/../microservice"
+
+  roles:
+    - metrics_service

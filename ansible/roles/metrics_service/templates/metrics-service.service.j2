@@ -1,0 +1,14 @@
+[Unit]
+Description=Metrics Microservice
+After=network.target
+
+[Service]
+Type=simple
+User={{ service_user }}
+WorkingDirectory={{ app_dir }}
+ExecStart=/usr/bin/python3 {{ app_dir }}/app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

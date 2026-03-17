@@ -1,0 +1,6 @@
+---
+deploy_mode: bare  
+service_port: 8080
+app_dir: /opt/metrics-service
+service_user: root
+service_name: metrics-service

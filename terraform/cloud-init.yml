@@ -1,0 +1,9 @@
+package_update: true
+packages:
+  - python3
+  - python3-pip
+
+runcmd:
+  - systemctl enable --now firewalld
+  - firewall-cmd --permanent --add-port=8080/tcp
+  - firewall-cmd --reload
