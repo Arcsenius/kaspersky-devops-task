@@ -1,80 +1,111 @@
-# DevOps Test Assignment — Metrics Microservice
+# Metrics Microservice - Linux Runbook
 
-HTTP-микросервис с Prometheus-метриками (порт 8080), развёртываемый на ВМ через Ansible.
+Инструкция для человека, который впервые видит проект.
+ОС хоста: Linux (Ubuntu/Debian).
 
-## Структура проекта
+Проект поднимает ВМ с Rocky Linux 9 и разворачивает микросервис через Ansible.
+Микросервис отдает Prometheus-метрики на `:8080` (`/metrics`).
 
+## Что в репозитории
+
+```text
+microservice/             # Python сервис + Dockerfile
+ansible/                  # playbook и role для деплоя
+vagrant/                  # Vagrant-конфиг
+setup-ubuntu-host.sh      # подготовка Linux-хоста для Vagrant + libvirt
+setup-ubuntu-simple.sh    # подготовка Linux-хоста для create-vm.sh
+create-vm.sh              # создание VM через libvirt/KVM
+destroy-vm.sh             # удаление VM через libvirt/KVM
 ```
-microservice/     — Python-сервер с метриками + Dockerfile
-ansible/          — Роль и плейбук для деплоя (bare / container)
-vagrant/          — Локальная ВМ (VirtualBox / QEMU)
-terraform/        — Yandex Cloud ВМ
-```
 
-## Метрики
+## Быстрый старт (рекомендуемый путь): libvirt + KVM
 
-- `host_info` — hostname, OS, тип хоста (container / virtual_machine / physical)
-- `host_type_info{type="..."}` — gauge (1 для активного типа)
+Этот путь самый прямой и не зависит от Vagrant.
 
----
-
-## Пререквизиты (macOS)
-
+1. Подготовить Linux-хост:
 ```bash
-brew install ansible vagrant
-# Intel Mac: VirtualBox
-# Apple Silicon: brew install qemu && vagrant plugin install vagrant-qemu
+chmod +x setup-ubuntu-simple.sh create-vm.sh destroy-vm.sh
+./setup-ubuntu-simple.sh
+newgrp libvirt
 ```
 
-## Запуск через Vagrant (локально)
+2. Создать ВМ:
+```bash
+./create-vm.sh
+```
 
+3. Развернуть сервис Ansible-ом (bare-режим, по умолчанию):
+```bash
+cd ansible
+ansible-playbook playbook.yml
+```
+
+4. Проверить метрики с хоста:
+```bash
+VM_IP=$(awk 'NR==2{print $1}' inventory/hosts.ini)
+curl "http://$VM_IP:8080/metrics"
+```
+
+5. Удалить ВМ после проверки:
+```bash
+cd ..
+./destroy-vm.sh
+```
+
+## Альтернативный путь: Vagrant (через libvirt provider)
+
+1. Подготовить Linux-хост:
+```bash
+chmod +x setup-ubuntu-host.sh
+./setup-ubuntu-host.sh
+newgrp libvirt
+```
+
+2. Поднять ВМ и применить Ansible:
 ```bash
 cd vagrant
-vagrant up                              # bare-режим по умолчанию
+vagrant up --provider=libvirt
+```
+
+3. Проверить метрики:
+```bash
 curl http://localhost:8080/metrics
 ```
 
-Для контейнерного режима:
-
+4. Остановить/удалить ВМ:
 ```bash
-cd vagrant
-ANSIBLE_ARGS='{"deploy_mode":"container"}' vagrant up
-# или при уже запущенной ВМ:
-cd ../ansible
-ansible-playbook playbook.yml -i ../vagrant/.vagrant/provisioners/ansible/inventory -e deploy_mode=container
+vagrant halt
+vagrant destroy -f
 ```
 
-## Запуск через Terraform (Yandex Cloud)
+## Контейнерный режим (опционально)
 
+Если нужно проверить бонусный сценарий с Docker:
+
+1. Установить Ansible коллекции:
 ```bash
-cd terraform
-terraform init
-terraform apply \
-  -var="yc_token=YOUR_TOKEN" \
-  -var="yc_cloud_id=YOUR_CLOUD_ID" \
-  -var="yc_folder_id=YOUR_FOLDER_ID"
+ansible-galaxy collection install community.docker ansible.posix
 ```
 
-Terraform автоматически создаст `ansible/inventory/hosts.ini`. Затем:
-
-```bash
-cd ../ansible
-ansible-playbook playbook.yml
-curl http://<EXTERNAL_IP>:8080/metrics
-```
-
-## Ручной запуск Ansible
-
+2. Запустить playbook в контейнерном режиме:
 ```bash
 cd ansible
-# Заполнить inventory/hosts.ini вручную, затем:
-ansible-playbook playbook.yml                          # bare-режим
-ansible-playbook playbook.yml -e deploy_mode=container # контейнер
+ansible-playbook playbook.yml -e deploy_mode=container
 ```
 
-## Переключение режимов деплоя
+## Что проверить после деплоя
 
-| Переменная    | Значение    | Описание                          |
-|---------------|-------------|-----------------------------------|
-| `deploy_mode` | `bare`      | Прямой запуск через systemd       |
-| `deploy_mode` | `container` | Запуск в Docker-контейнере        |
+1. Сервис слушает `8080`.
+2. Открывается endpoint `http://<VM_IP>:8080/metrics`.
+3. В ответе есть метрики `host_info` и `host_type_info`.
+
+## Частые проблемы
+
+1. После установки `libvirt` нет доступа без `sudo`:
+нужно выполнить `newgrp libvirt` или перелогиниться.
+
+2. `create-vm.sh` не определил IP:
+выполнить `sudo virsh domifaddr metrics-vm` и вручную поправить `ansible/inventory/hosts.ini`.
+
+3. Ошибка Docker/collections в container-режиме:
+установить `community.docker` и `ansible.posix` (команда выше).
